@@ -1,0 +1,11 @@
+---
+# This is the viz settings file
+#
+#
+parser: regex
+blocks:
+  - group-policy {{name}}
+  - tunnel-group {{name}}
+  - username {{name}}
+  - access-list {{name}}
+  - ip local pool {{name}}
