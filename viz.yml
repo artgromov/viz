@@ -1,10 +1,56 @@
 ---
-# This is the viz node spec list
+#
+# This is the viz yaml configuration file
+#
+
+# node_specs section defines parser object search rules
 # {{name}} indicates node name location in line
-# {%...%}} indicates rightmost substring without meaning to the grouping algorithm
-# 
-- group-policy {{name}}{%...%}
-- tunnel-group {{name}}{%...%}
-- username {{name}}{%...%}
-- access-list {{name}}{%...%}
-- ip local pool {{name}}{%...%}
+# {%...%}} indicates rightmost substring without meaning to the parser algorithm
+#
+node_specs:
+  - group-policy {{name}}{%...%}
+  - tunnel-group {{name}}{%...%}
+  - username {{name}}{%...%}
+  - access-list {{name}}{%...%}
+  - ip local pool {{name}}{%...%}
+
+# blockdiag section defines general diagram parameters
+# check blockdiag documentation for additional details
+#
+blockdiag:
+  default_fontsize: 6
+  default_shape: box
+  orientation: landscape
+  edge_layout: normal
+
+# logging section defines settings for python built-in logging module
+# every class has personal logger object
+# changing root logger level is enough for most cases
+# check logging module documentation for additional details
+#
+#logging:
+#  loggers:
+#    root:
+#      handlers: [console]
+#      level: logging.DEBUG
+#    Driver:
+#      handlers: [console]
+#      level: logging.DEBUG
+#    Parser:
+#      handlers: [console]
+#      level: logging.DEBUG
+#    Builder:
+#      handlers: [console]
+#      level: logging.DEBUG
+#    ConfigNode:
+#      handlers: [console]
+#      level: logging.DEBUG
+#  handlers:
+#    console:
+#      class: logging.StreamHandler
+#      formatter: default
+#      level: logging.DEBUG
+#      stream: ext://sys.stderr
+#  formatters:
+#    default:
+#      format: '%(name)s %(levelname)s: %(message)s'

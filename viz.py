@@ -1,10 +1,18 @@
     #!/bin/python3
 
 import sys
-import yaml
 import logging
-from uuid import uuid4 as uuid
+import yaml
 import re
+from uuid import uuid4
+import jinja2
+import blockdiag.parser
+import blockdiag.builder
+import blockdiag.drawer
+
+# constants
+SETTINGS_FILE = 'viz.yml'
+TEMPLATE_FILE = 'viz.j2'
 
 # instantiate logging
 log = logging.getLogger()
@@ -14,41 +22,61 @@ ch.setFormatter(fm)
 log.addHandler(ch)
 log.setLevel(logging.DEBUG)
 
-class Builder:
-    def __init__(self, filename='viz.yml'):
+
+class Driver:
+    def __init__(self):
         # read settings
-        with open(filename, encoding='utf-8') as settings_file:
-            self.specs = yaml.load(settings_file.read())
+        self.log = logging.getLogger('Driver')
+        self.log.debug('object {} created'.format(self))
+        
+        self.log.info('reading settings file "{}"'.format(SETTINGS_FILE))
+        with open(SETTINGS_FILE, encoding='utf-8') as settings_file:
+            self.settings = yaml.load(settings_file.read())
 
         self.nodes = []
 
-        self.log = logging.getLogger('Builder')
-        self.log.setLevel(logging.DEBUG)
-        self.log.debug('object {} created'.format(self))
-
-    def get_nodes(self, filename):
+    def parse_nodes(self, filename):
+        self.log.info('parsing config for nodes')
         parser = Parser(filename)
-
-        for i in self.specs:
+        for i in self.settings['node_specs']:
             self.nodes += parser.get_nodes(i)
-        self.log.debug('parsed {} nodes total'.format(len(self.nodes)))
+        self.log.debug('parsed {} nodes'.format(len(self.nodes)))
 
-    def get_links(self):
+    def get_node_by_id(self, id):
+        for node in self.nodes:
+            if node.id == id:
+                return node
+
+    def collect_links(self):
+        self.log.info('collecting links between objects')
         for n, i in enumerate(self.nodes):
             left = self.nodes[n+1:]
             for j in left:
-                if i.check_connection(j): self.log.debug('found link from {} to {}'.format(i, j))
-                if j.check_connection(i): self.log.debug('found link from {} to {}'.format(j, i))
+                if i.check_connection(j): self.log.debug('found link from {:40} to {:40}'.format(i, j))
+                if j.check_connection(i): self.log.debug('found link from {:40} to {:40}'.format(j, i))
 
-    def build_tree(self):
-        return {i: i.links for i in self.nodes}
+    def build_diag(self,filename='viz.png', filetype='PNG'):
+        self.log.info('collecting diagram config data')
+        config = settings['blockdiag']
+        config['nodes'] = [i.get_diag_config for i in self.nodes]
+        self.log.debug('config collected from {} nodes'.format(len(self.nodes)))
 
-    def export_tree(self):
-        pass
+        self.log.info('rendering jinja template from file "{}"'.format(TEMPLATE_FILE))
+        env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True, loader=jinja2.FileSystemLoader('./'))
+        template = env.get_template(TEMPLATE_FILE)
+        source = template.render(**config)
+        self.log.debug('rendered template:\n{}'.format(source))
 
+        self.log.info('building diagram and saving it into "{}"'.format(filename))
+        builder = Builder(source)
+        builder.export_diag(filename, filetype)
+        self.log.info('done'.format(filename))
 
 class Parser:
     def __init__(self, filename):
+        self.log = logging.getLogger('Parser')
+        self.log.debug('object {} created'.format(self))
+            
         with open(filename, encoding='utf-8') as config_file:
             config = config_file.readlines()
 
@@ -57,9 +85,7 @@ class Parser:
             if not line.startswith('!') or not line.startswith(':') or not line.strip() == '':
                 self.config.append(line.rstrip())
 
-        self.log = logging.getLogger('Parser')
-        self.log.setLevel(logging.DEBUG)
-        self.log.debug('object {} created'.format(self))
+
 
     def get_nodes(self, node_spec):
         pattern = '^' + node_spec.replace('{{name}}', '(?P<name>[-\w]+)').replace('{%...%}', ' ?.*$')
@@ -112,7 +138,7 @@ class Parser:
 
 class ConfigNode:
     def __init__(self, name, text):
-        self.id = uuid()
+        self.id = uuid4()
         self.text = text
         self.name = name
         self.header = text[0]
@@ -120,7 +146,6 @@ class ConfigNode:
         self.links = []
 
         self.log = logging.getLogger('ConfigNode')
-        self.log.setLevel(logging.DEBUG)
         self.log.debug('object {} created'.format(self))
 
     def __repr__(self):
@@ -137,10 +162,32 @@ class ConfigNode:
                             other.links.append(self.id)
         return found_link
 
+    def get_diag_config(self):
+        config = {'id': self.id,
+                  'label': '\n'.join(self.text),
+                  'color': '#' + hashlib.md5(self.type.encode()).hexdigest()[0:6],
+                  'links': self.links
+                  }
+        return config
+
+
+class Builder:
+    def __init__(self, source):
+        self.log = logging.getLogger('Builder')
+        self.log.debug('object {} created'.format(self))
+
+        self.tree = blockdiag.parser.parse_string(source)
+        self.diagram = blockdiag.builder.ScreenNodeBuilder.build(self.tree)
+
+    def export_diag(self, filename, filetype):
+        self.draw = blockdiag.drawer.DiagramDraw(filetype.upper(), self.diagram, filename)
+        self.draw.draw()
+        self.draw.save()
+        self.log.debug('diagram saved as "{}"'.format(filename))
+
 
 if __name__ == '__main__':
-    viz = Builder()
-    viz.get_nodes('config.txt')
-    viz.get_links()
-    print(str(viz.build_tree()))    # create graphml object, vizualize it
-    viz.export_tree()               # save graphml to file
+    viz = Driver()
+    viz.parse_nodes('config.txt')
+    viz.collect_links()
+    viz.build_diag()
