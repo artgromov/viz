@@ -1,12 +1,11 @@
 blockdiag {
-default_fontsize = {{ default_fontsize }};
-default_shape = {{ default_shape }};
-orientation = {{ orientation }};
-edge_layout = {{ edge_layout }};
+{% for key, value in diag.items() %}
+    {{ key }} = {{ value }};
+{% endfor %}
 
 {% for node in nodes %}
-    {{ node.id }} [color = {{ node.color }}];
-    {{ node.id }} [label = {{ node.label }}];
+    {{ node.id }} [color = "{{ node.color }}"];
+    {{ node.id }} [label = "{{ node.label }}"];
     {% for link in node.links %}
         {{ link }} -> {{ node.id }};
     {% endfor %}
