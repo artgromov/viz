@@ -1,14 +1,20 @@
-blockdiag {
-{% for key, value in diag.items() %}
-    {{ key }} = {{ value }};
-{% endfor %}
-
-{% for node in nodes %}
-    {{ node.id }} [color = "{{ node.color }}"];
-    {{ node.id }} [label = "{{ node.label }}"];
-    {% for link in node.links %}
-        {{ link }} -> {{ node.id }};
-    {% endfor %}
-
-{% endfor %}
+digraph main {
+	graph [rankdir=LR]
+	node [fontsize=6 shape=rectangle style=filled]
+	{% for subgraph in subgraphs %}
+	subgraph "{{ subgraph.type }}" {
+		graph [rank=same]
+		node [color="{{ subgraph.color }}"]
+		{% for node in subgraph.nodes %}
+		"{{ node.id }}"
+		{% endfor %}
+	}
+	{% endfor %}
+	{% for subgraph in subgraphs %}
+		{% for node in subgraph.nodes %}
+			{% for link in node.links %}
+		"{{ link }}" -> "{{ node.id }}";
+			{% endfor %}
+		{% endfor %}
+	{% endfor %}
 }

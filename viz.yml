@@ -4,33 +4,34 @@
 #
 
 # node_specs section defines parser object search rules
-# {{name}} indicates node name location in line
-# {{...}}} indicates rightmost substring without meaning to the parser algorithm
+# {{type}} indicates node type and name location in line
+# {%...%} indicates rightmost substring without meaning to the parser algorithm
 #
 schema:
-  - node: group-policy {{name}}{{...}}
-    type: group-policy
+  - node: group-policy {{group-policy}}{%...%}
     links:
       - " vpn-filter value {{access-list}}"
       - " split-tunnel-network-list value {{access-list}}"
+      - " address-pools value {{ip-local-pool}}"
 
-  - node: tunnel-group {{name}}{{...}}
-    type: tunnel-group
+  - node: tunnel-group {{tunnel-group}}{%...%}
     links:
-      - " address-pool {{ip-pool}}"
+      - " address-pool {{ip-local-pool}}"
       - " default-group-policy {{group-policy}}"
 
-  - node: username {{name}}{{...}}
-    type: user
+  - node: username {{username}}{%...%}
     links:
       - " vpn-filter value {{access-list}}"
-      - " group-lock value {{group-policy}"
+      - " group-lock value {{tunnel-group}}"
+      - " vpn-group-policy {{group-policy}}"
 
-  - node: access-list {{name}}{{...}}
-    type: access-list
+  - node: crypto map {{crypto-map}}{%...%}
+    links:
+      - "{%...%}crypto map{%...%}match address {{access-list}}"
 
-  - node: ip local pool {{name}}{{...}}
-    type: ip-pool
+  - node: access-list {{access-list}}{%...%}
+
+  - node: ip local pool {{ip-local-pool}}{%...%}
 
 # logging section defines settings for python built-in logging module
 # every class has personal logger object
@@ -42,16 +43,6 @@ logging:
   root:
     handlers: [console]
     level: DEBUG
-  loggers:
-    Driver:
-      handlers: []
-      level:
-    Parser:
-      handlers: []
-      level:
-    ConfigNode:
-      handlers: []
-      level:
   handlers:
     console:
       class: logging.StreamHandler
@@ -60,4 +51,4 @@ logging:
       stream: ext://sys.stderr
   formatters:
     default:
-      format: '%(name)s %(levelname)s: %(message)s'
+      format: '%(levelname)s: %(message)s'

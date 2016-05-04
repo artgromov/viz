@@ -7,9 +7,6 @@ import yaml
 import re
 from uuid import uuid4
 import jinja2
-import blockdiag.parser
-import blockdiag.builder
-import blockdiag.drawer
 import hashlib
 
 
@@ -32,76 +29,97 @@ SETTINGS = read_settings(SETTINGS_FILE)
 logging.config.dictConfig(SETTINGS['logging'])
 
 
-class Driver:
-    def __init__(self):
-        self.log = logging.getLogger('Driver')
-        self.log.debug('object {} created'.format(self))
+colors = {}
+def get_color(string):
+    try:
+        color = colors[string]
+    except KeyError:
+        color = '#' + hashlib.sha1(string.encode()).hexdigest()[0:6]
+        colors[string] = color
+    return color
 
+
+class Builder:
+    def __init__(self, filename):
+        logging.debug('object {} created'.format(self))
+        self.parser = Parser(filename)
         self.nodes = []
 
-    def parse_nodes(self, filename):
-        self.log.info('parsing config for nodes')
-        parser = Parser(filename)
-        for i in SETTINGS['node_specs']:
-            self.nodes += parser.get_nodes(i)
-        self.log.debug('parsed {} nodes'.format(len(self.nodes)))
+        logging.info('parsing config for nodes')
+        for node in SETTINGS['schema']:
+            block_type, nodes = self.parser.parse_nodes(**node)
+            block_color = get_color(block_type)
+            logging.info('parsed {} {} nodes'.format(len(nodes), block_type))
 
-    def get_node_by_id(self, id):
-        for node in self.nodes:
-            if node.id == id:
-                return node
+            new_data = {'type': block_type,
+                        'color': block_color,
+                        'nodes': [i.get_dict() for i in nodes]
+                        }
+            self.nodes.append(new_data)
 
-    def collect_links(self):
-        self.log.info('collecting links between objects')
-        for n, i in enumerate(self.nodes):
-            left = self.nodes[n+1:]
-            for j in left:
-                if i.check_connection(j): self.log.debug('found link from {} to {}'.format(i, j))
-                if j.check_connection(i): self.log.debug('found link from {} to {}'.format(j, i))
-
-    def build_diag(self,filename='viz.png', filetype='PNG'):
-        self.log.info('collecting diagram config data')
-        config = {'diag': SETTINGS['blockdiag'],
-                  'nodes': [i.get_diag_config() for i in self.nodes]
+    def export_gv(self, filename):
+        logging.info('collecting diagram data')
+        config = {#'digraph': SETTINGS['digraph'],
+                  'subgraphs': self.nodes
                   }
-        self.log.debug('config collected from {} nodes'.format(len(self.nodes)))
 
-        self.log.info('rendering jinja template from template file "{}"'.format(TEMPLATE_FILE))
+        logging.info('rendering template from file "{}"'.format(TEMPLATE_FILE))
         env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True, loader=jinja2.FileSystemLoader('./'))
         template = env.get_template(TEMPLATE_FILE)
         source = template.render(**config)
-        self.log.debug('template rendered successfully')
+        logging.debug('template rendered successfully')
 
-        self.log.info('building diagram and saving it into "{}"'.format(filename))
-        builder = Builder(source)
-        builder.export_diag(filename, filetype)
-        self.log.info('done'.format(filename))
+        logging.info('saving .gv file as "{}"'.format(filename))
+        with open(filename, 'w', encoding='utf-8') as gv_file:
+            gv_file.write(source)
+
+        logging.info('done')
+
+    def export_pdf(self, filename):
+
+        logging.info('done')
+
+
+def config_load(filename):
+    try:
+        with open(filename, encoding='utf-8') as config_file:
+            return config_file.readlines()
+    except FileNotFoundError:
+        pass
+
+def config_filter(unfiltered_config):
+    config = []
+    for line in unfiltered_config:
+        if not line.startswith('!') or not line.startswith(':') or not line.strip() == '':
+            config.append(line.rstrip())
+    return config
+
+def get_type_regex(string):
+    block_type = string.split('{{')[1].split('}}')[0]
+    pattern = string.replace('{{' + block_type + '}}', '(?P<name>[-\w]+)')
+    pattern = pattern.replace('{%...%}', '.*?')
+    pattern = '^' + pattern + '$'
+
+    logging.debug('got string: "{}", type: "{}", regex: "{}"'.format(string, block_type, pattern))
+    regex = re.compile(pattern)
+    return block_type, regex
 
 
 class Parser:
     def __init__(self, filename):
-        self.log = logging.getLogger('Parser')
-        self.log.debug('object {} created'.format(self))
-            
-        with open(filename, encoding='utf-8') as config_file:
-            config = config_file.readlines()
+        self.config = config_load(filename)
+        self.config = config_filter(self.config)
 
-        self.config = []
-        for line in config:
-            if not line.startswith('!') or not line.startswith(':') or not line.strip() == '':
-                self.config.append(line.rstrip())
-
-    def get_nodes(self, node_spec):
-        pattern = '^' + node_spec.replace('{{name}}', '(?P<name>[-\w]+)').replace('{%...%}', ' ?.*$')
-        self.log.debug('got "{}" node_spec, using "{}" regex pattern'.format(node_spec, pattern))
-        regex = re.compile(pattern)
+    def parse_nodes(self, node, links=None):
+        block_type, regex = get_type_regex(node)
+        
         nodes = []
 
         conf_pos = 0
         conf_end = len(self.config) - 1
 
         while conf_pos <= conf_end:
-            self.log.debug('looking for block from {} position'.format(conf_pos))
+            logging.debug('looking for block from {} position'.format(conf_pos))
             block_name = ''
             block_pos = 0
             started = False
@@ -113,85 +131,74 @@ class Parser:
                         block_name = match_obj.group('name')
                         block_pos = conf_pos + num
                         started = True
-                        self.log.debug('found block start at {}: "{}", block_name: {}'.format(conf_pos + num, line, block_name))
+                        logging.debug('found block start at {}: "{}", block_name: {}'.format(conf_pos + num, line, block_name))
                     elif conf_pos + num == conf_end:
-                        self.log.debug('end of file'.format(conf_pos))
+                        logging.debug('end of file'.format(conf_pos))
                         conf_pos = conf_pos + num + 1
                         break
 
                 else:
                     if match_obj and block_name != match_obj.group('name'):
                         conf_pos += num
-                        self.log.debug('found block end at {}: "{}", block_name mismatch'.format(conf_pos, line))
-                        nodes.append(ConfigNode(block_name, self.config[block_pos:conf_pos]))
+                        logging.debug('found block end at {}: "{}", block_name mismatch'.format(conf_pos, line))
+                        new_node = ConfigNode(block_name, block_type, self.config[block_pos:conf_pos])
+                        nodes.append(new_node)
                         break
                     elif not match_obj and not line.startswith(' '):
                         conf_pos += num
-                        self.log.debug('found block end at {}: "{}", line without space'.format(conf_pos, line))
-                        nodes.append(ConfigNode(block_name, self.config[block_pos:conf_pos]))
+                        logging.debug('found block end at {}: "{}", line without space'.format(conf_pos, line))
+                        new_node = ConfigNode(block_name, block_type, self.config[block_pos:conf_pos])
+                        nodes.append(new_node)
                         break
                     elif conf_pos + num == conf_end:
                         conf_pos += num
-                        self.log.debug('found block end at {}: "{}", end of file'.format(conf_pos, line))
-                        nodes.append(ConfigNode(block_name, self.config[block_pos:conf_pos]))
+                        logging.debug('found block end at {}: "{}", end of file'.format(conf_pos, line))
+                        new_node = ConfigNode(block_name, block_type, self.config[block_pos:conf_pos])
+                        nodes.append(new_node)
                         conf_pos += 1
                         break
-        self.log.debug('sending {} nodes'.format(len(nodes)))
-        return nodes
+        
+        if links:
+            for node in nodes:
+                logging.debug('looking for links in node {}'.format(node))
+                for link in links:
+                    link_type, regex = get_type_regex(link)
+
+                    for line in node.text:
+                        match_obj = regex.search(line)
+                        if match_obj:
+                            logging.debug('found match for link type "{}" in node {}'.format(link_type, node))
+                            link_name = match_obj.group('name')
+                            node.add_link(link_type + ' ' + link_name)
+
+        return block_type, nodes
 
 
 class ConfigNode:
-    def __init__(self, name, text):
-        self.id = uuid4()
-        self.text = text
-        self.name = name
-        self.header = text[0]
-        self.type = self.header[:self.header.find(self.name)].strip()
+    def __init__(self, block_name, block_type, block_text):       
+        self.name = block_name
+        self.type = block_type
+        self.text = block_text
+        self.id = self.type + ' ' + self.name
         self.links = []
 
-        self.log = logging.getLogger('ConfigNode')
-        self.log.debug('object {} created'.format(self))
+        logging.debug('object {} created'.format(self))
 
     def __repr__(self):
-        return '<ConfigNode type: "{}" name: "{}">'.format(self.type, self.name)
+        return '<ConfigNode: {} {}>'.format(self.type, self.name)
 
-    def check_connection(self, other):
-        found_link = False
-        if self.type != other.type:
-            for line in other.text:
-                for word in line.split(' '):
-                    if self.name == word:
-                        found_link = True
-                        if self.id not in other.links:
-                            other.links.append(self.id)
-        return found_link
+    def add_link(self, string):
+        if string not in self.links:
+            self.links.append(string)
 
-    def get_diag_config(self):
-        config = {'id': self.id,
-                  'label': '{} {}'.format(self.type, self.name),
-                  'color': '#' + hashlib.md5(self.type.encode()).hexdigest()[0:6],
-                  'links': self.links
-                  }
-        return config
-
-
-class Builder:
-    def __init__(self, source):
-        self.log = logging.getLogger('Builder')
-        self.log.debug('object {} created'.format(self))
-
-        self.tree = blockdiag.parser.parse_string(source)
-        self.diagram = blockdiag.builder.ScreenNodeBuilder.build(self.tree)
-
-    def export_diag(self, filename, filetype):
-        self.draw = blockdiag.drawer.DiagramDraw(filetype.upper(), self.diagram, filename)
-        self.draw.draw()
-        self.draw.save()
-        self.log.debug('diagram saved as "{}"'.format(filename))
-
+    def get_dict(self):
+        return {'id': self.id,
+                'links': self.links
+                }
+    
 
 if __name__ == '__main__':
-    viz = Driver()
-    viz.parse_nodes('config.txt')
-    viz.collect_links()
-    viz.build_diag()
+    viz = Builder('config.txt')
+    viz.export_gv('viz.gv')
+    #viz.export_pdf('viz.pdf')
+    
