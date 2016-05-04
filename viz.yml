@@ -1,27 +1,36 @@
 ---
 #
-# This is the viz yaml configuration file
+# viz yaml configuration file
 #
 
 # node_specs section defines parser object search rules
 # {{name}} indicates node name location in line
-# {%...%}} indicates rightmost substring without meaning to the parser algorithm
+# {{...}}} indicates rightmost substring without meaning to the parser algorithm
 #
-node_specs:
-  - group-policy {{name}}{%...%}
-  - tunnel-group {{name}}{%...%}
-  - username {{name}}{%...%}
-  - access-list {{name}}{%...%}
-  - ip local pool {{name}}{%...%}
+schema:
+  - node: group-policy {{name}}{{...}}
+    type: group-policy
+    links:
+      - " vpn-filter value {{access-list}}"
+      - " split-tunnel-network-list value {{access-list}}"
 
-# blockdiag section defines general diagram parameters
-# check blockdiag documentation for additional details
-#
-blockdiag:
-  node_width: 250
-  default_fontsize: 6
-  default_shape: box
-  orientation: landscape
+  - node: tunnel-group {{name}}{{...}}
+    type: tunnel-group
+    links:
+      - " address-pool {{ip-pool}}"
+      - " default-group-policy {{group-policy}}"
+
+  - node: username {{name}}{{...}}
+    type: user
+    links:
+      - " vpn-filter value {{access-list}}"
+      - " group-lock value {{group-policy}"
+
+  - node: access-list {{name}}{{...}}
+    type: access-list
+
+  - node: ip local pool {{name}}{{...}}
+    type: ip-pool
 
 # logging section defines settings for python built-in logging module
 # every class has personal logger object
@@ -40,15 +49,9 @@ logging:
     Parser:
       handlers: []
       level:
-    Builder:
-      handlers: []
-      level:
     ConfigNode:
       handlers: []
       level:
-    PIL.PngImagePlugin:
-      handlers: []
-      level: WARNING
   handlers:
     console:
       class: logging.StreamHandler
