@@ -1,13 +1,15 @@
 #!/bin/python3
 
-import sys
 import logging
 import logging.config
 import yaml
 import re
-from uuid import uuid4
-import jinja2
 import hashlib
+import jinja2
+import time
+import sys
+import os
+from subprocess import call, DEVNULL
 
 
 def read_settings(filename):
@@ -58,25 +60,25 @@ class Builder:
             self.nodes.append(new_data)
 
     def export_gv(self, filename):
-        logging.info('collecting diagram data')
-        config = {#'digraph': SETTINGS['digraph'],
-                  'subgraphs': self.nodes
-                  }
-
-        logging.info('rendering template from file "{}"'.format(TEMPLATE_FILE))
+        logging.debug('rendering jinja2 template from file "{}"'.format(TEMPLATE_FILE))
         env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True, loader=jinja2.FileSystemLoader('./'))
         template = env.get_template(TEMPLATE_FILE)
-        source = template.render(**config)
+        source = template.render(subgraphs=self.nodes)
         logging.debug('template rendered successfully')
 
-        logging.info('saving .gv file as "{}"'.format(filename))
+        logging.info('saving as "{}"'.format(filename))
         with open(filename, 'w', encoding='utf-8') as gv_file:
             gv_file.write(source)
-
         logging.info('done')
 
     def export_pdf(self, filename):
+        self.export_gv('viz.tmp.gv')
 
+        logging.info('saving as "{}"'.format(filename))
+        call('dot -Tpdf -o {} viz.tmp.gv'.format(filename), stdout=DEVNULL, stderr=DEVNULL)
+        time.sleep(2)
+        logging.debug('removing viz.tmp.gv file')
+        os.remove('viz.tmp.gv')
         logging.info('done')
 
 
@@ -200,5 +202,5 @@ class ConfigNode:
 if __name__ == '__main__':
     viz = Builder('config.txt')
     viz.export_gv('viz.gv')
-    #viz.export_pdf('viz.pdf')
+    viz.export_pdf('viz.pdf')
     
